@@ -38,13 +38,6 @@ def extract_dialogues_from_srt(file_path):
 
     return dialogue_string
 
-# Example usage:
-file_path = '/kaggle/input/movies2/arrival.srt'  # Replace with your SRT file path
-dialogue_text = extract_dialogues_from_srt(file_path)
-print(dialogue_text)
-
-print("Number of words in the subtitle file: ", len(dialogue_text.split(" ")))
-
 def my_collate_fn(batch):
     to_return_comments=[]
     to_return_labels=[]
@@ -93,9 +86,13 @@ def train_one_epoch(models, dataloaders, optimizers, loss_function):
             try:
                 # Forward pass
                 srt_tensors = models[0](srt_string)  # 20 x 1024
+                #print("Model - 1 dims:",srt_tensors.shape)
                 comments_tensor = models[1](comments)  # B x 768
+                #print("Model - 2 dims:",comments_tensor.shape)
                 context_tensors = models[2](srt_tensors, comments_tensor)  # B x 2 x 1024
+                #print("Model-3 dims:",context_tensors.shape)
                 pred = models[3](comments_tensor, context_tensors)  # B x 2
+                #print("Model - 4 dims:",pred.shape)
                 
                 # Convert labels to tensor
                 labels_tensor = torch.tensor(labels, dtype=torch.long)
@@ -234,7 +231,7 @@ class Model1(nn.Module):
     super().__init__()
     self.number_of_chunks=number_of_hidden_states
     self.gru=nn.GRU(input_size_to_GRU,size_of_GRU,batch_first=True)
-    model_path = "/kaggle/input/embeddings-model/my_model_from_huggingface"
+    model_path = "./my_model_from_huggingface"
 
     # Load the tokenizer and model from the local dataset folder
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -282,32 +279,63 @@ class Model1(nn.Module):
 
 
 class Model2(nn.Module):
-  def __init__(self,input_size_to_GRU=768,size_of_GRU=768):
-    super().__init__()
-    self.gru=nn.GRU(input_size_to_GRU,size_of_GRU,batch_first=True)
-    model_path = "/kaggle/input/embeddings-model/my_model_from_huggingface"
+    def __init__(self, input_size_to_GRU=768, size_of_GRU=768, max_seq_len=512):
+        super().__init__()
+        self.gru = nn.GRU(input_size_to_GRU, size_of_GRU, batch_first=True)
+        self.max_seq_len = max_seq_len
+        
+        model_path = "./my_model_from_huggingface"
+        # Load the tokenizer and model from the local dataset folder
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModel.from_pretrained(model_path)
+        
+        # Create a pipeline for feature extraction
+        pipe = pipeline("feature-extraction", model=model, tokenizer=tokenizer)
+        self.pipe = pipe
 
-    # Load the tokenizer and model from the local dataset folder
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModel.from_pretrained(model_path)
-    
-    # Create a pipeline for feature extraction (or another task if desired)
-    pipe = pipeline("feature-extraction", model=model, tokenizer=tokenizer)
-    self.pipe = pipe
-
-  def forward(self,comment_strings):
-
-    batched_comments_list=[]
-
-    for comment_string in comment_strings:
-        out=self.pipe(comment_string)  #out is a list
-        batched_comments_list.append(out)
-
-    batched_comments_list=torch.tensor(batched_comments_list)
-
-    outputs, hidden=self.gru(batched_comments_list)
-
-    return hidden.squeeze(0)    #hopefully this is (B,768)
+    def forward(self, comment_strings):
+        batched_comments_list = []
+        max_length = 0
+        
+        # First pass: get embeddings and find max length
+        for comment_string in comment_strings:
+            out = self.pipe(comment_string)  # out is a list of embeddings
+            # Convert to tensor and squeeze if needed
+            embedding = torch.tensor(out).squeeze(0)  # Remove batch dim if present
+            
+            # Handle case where embedding might be 1D (single token)
+            if embedding.dim() == 1:
+                embedding = embedding.unsqueeze(0)
+            
+            batched_comments_list.append(embedding)
+            max_length = max(max_length, embedding.shape[0])
+        
+        # Apply max sequence length limit
+        max_length = min(max_length, self.max_seq_len)
+        
+        # Second pass: pad all embeddings to max_length
+        padded_embeddings = []
+        for embedding in batched_comments_list:
+            seq_len = embedding.shape[0]
+            
+            if seq_len > max_length:
+                # Truncate if longer than max_length
+                embedding = embedding[:max_length]
+            elif seq_len < max_length:
+                # Pad if shorter than max_length
+                padding_size = max_length - seq_len
+                padding = torch.zeros(padding_size, embedding.shape[1])
+                embedding = torch.cat([embedding, padding], dim=0)
+            
+            padded_embeddings.append(embedding)
+        
+        # Stack all padded embeddings into a batch
+        batched_comments_tensor = torch.stack(padded_embeddings, dim=0)  # (B, max_length, 768)
+        
+        # Pass through GRU
+        outputs, hidden = self.gru(batched_comments_tensor)
+        
+        return hidden.squeeze(0)  # (B, 768)
   
 
 
@@ -450,15 +478,12 @@ class Model4(nn.Module):
 
 class my_dataset(Dataset):
     def __init__(self,srt_file_path):
-        self.srt_string=""
         self.comments=[]      #at the same index, so movie at index_1, will have [comment_1,comment_2...comment_n] at index 1
         self.labels=[]
      
-        self.srt_strings=extract_dialogues_from_srt(srt_file_path)
-        self.comments.append()
-        self.labels.append()
+        self.srt_string=extract_dialogues_from_srt(srt_file_path)
         
-        with open(file_path[:-4]+".csv", 'r', encoding='utf-8') as csvfile:
+        with open(srt_file_path[:-4]+".csv", 'r', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile)
             for row in reader:
                 # Expecting each row to have two columns: type and comment
@@ -496,30 +521,30 @@ models=[Model1(768,1024,20),Model2(),Model3(),Model4()]
 train_datasets=[]
 valid_datasets=[]
 
-for file_name in os.listdir(train_dir_path,-10):
+for file_name in os.listdir(train_dir_path):
     if (file_name.endswith(".srt")):
         srt_file_path=os.path.join(train_dir_path,file_name)
         train_datasets.append(my_dataset(srt_file_path))
 
-for file_name in os.listdir(valid_dir_path,-10):
+for file_name in os.listdir(valid_dir_path):
     if (file_name.endswith(".srt")):
         srt_file_path=os.path.join(valid_dir_path,file_name)
         valid_datasets.append(my_dataset(srt_file_path))
 
 
 
-train_dataloaders=[DataLoader(dataset,batch_size=batch_size,collate_fn=my_collate_fn) for dataset in train_datasets]
-test_dataloaders=[DataLoader(dataset,batch_size=batch_size,collate_fn=my_collate_fn) for dataset in valid_datasets]
+train_dataloaders=[DataLoader(dataset,batch_size=batch_size, shuffle=True, collate_fn=my_collate_fn) for dataset in train_datasets]
+test_dataloaders=[DataLoader(dataset,batch_size=batch_size, shuffle=True, collate_fn=my_collate_fn) for dataset in valid_datasets]
 optimisers=[optim.Adam(model.parameters(), lr=lr) for model in models]
 
 
 for i in range(n_epochs):
     models, optimisers=train_one_epoch(models,train_dataloaders,optimisers,loss_function)
-    models, optimisers=eval_one_epoch(models,valid_datasets,optimisers,loss_function)
+    models, optimisers=eval_one_epoch(models,test_dataloaders,optimisers,loss_function)
 
     for idx in range(4):
-        model_path = f"out/RUN_1/mock_model{idx+1}_{i+1}_epoch.pth"
-        weights_path = f"out/RUN_1/mock_model{idx+1}_weights_{i+1}_epoch.pth"
+        model_path = f"./out/mock_model{idx+1}_{i+1}_epoch.pth"
+        weights_path = f"./out/mock_model{idx+1}_weights_{i+1}_epoch.pth"
     
         torch.save(models[idx], model_path)
         torch.save(models[idx].state_dict(), weights_path)
