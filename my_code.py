@@ -66,55 +66,158 @@ def my_collate_fn(batch):
 
 
 
-def train_one_epoch(models,dataloaders,optimisers,loss_function):
-   
+
+
+def train_one_epoch(models, dataloaders, optimizers, loss_function):
+    """
+    Train models for one epoch with proper logging
+    """
+    # Set models to training mode
     for model in models:
         model.train()
+    
+    total_loss = 0.0
+    total_samples = 0
+    all_predictions = []
+    all_labels = []
+    batch_count = 0
+    
+    # Clear gradients before starting
+    for optim in optimizers:
+        optim.zero_grad()
+    
+    for dataloader_idx, dataloader in enumerate(dataloaders):
+        print(f"Training on dataloader {dataloader_idx + 1}/{len(dataloaders)}")
+        
+        for batch_idx, (srt_string, comments, labels) in enumerate(dataloader):
+            try:
+                # Forward pass
+                srt_tensors = models[0](srt_string)  # 20 x 1024
+                comments_tensor = models[1](comments)  # B x 768
+                context_tensors = models[2](srt_tensors, comments_tensor)  # B x 2 x 1024
+                pred = models[3](comments_tensor, context_tensors)  # B x 2
+                
+                # Convert labels to tensor
+                labels_tensor = torch.tensor(labels, dtype=torch.long)
+                
+                # Calculate loss
+                loss = loss_function(pred, labels_tensor)
+                
+                # Backward pass
+                loss.backward()
+                
+                # Update weights
+                for optim in optimizers:
+                    optim.step()
+                    optim.zero_grad()
+                
+                # Collect statistics
+                total_loss += loss.item()
+                total_samples += len(labels)
+                batch_count += 1
+                
+                # Get predictions
+                predicted_classes = torch.argmax(pred, dim=1)
+                all_predictions.extend(predicted_classes.detach().cpu().numpy())
+                all_labels.extend(labels)
+                
+                # Print batch progress
+                if batch_idx % 10 == 0:
+                    current_accuracy = accuracy_score(all_labels, all_predictions) * 100
+                    print(f"  Batch {batch_idx}: Loss = {loss.item():.4f}, Accuracy = {current_accuracy:.2f}%")
+                    
+            except Exception as e:
+                print(f"Error in batch {batch_idx} of dataloader {dataloader_idx}: {str(e)}")
+                continue
+    
+    # Calculate final metrics
+    avg_loss = total_loss / batch_count if batch_count > 0 else 0
+    accuracy = accuracy_score(all_labels, all_predictions) * 100
+    f1 = f1_score(all_labels, all_predictions, average='weighted') * 100
+    precision = precision_score(all_labels, all_predictions, average='weighted') * 100
+    recall = recall_score(all_labels, all_predictions, average='weighted') * 100
+    
+    print(f"\n=== TRAINING EPOCH SUMMARY ===")
+    print(f"Average Loss: {avg_loss:.4f}")
+    print(f"Accuracy: {accuracy:.2f}%")
+    print(f"F1 Score: {f1:.2f}%")
+    print(f"Precision: {precision:.2f}%")
+    print(f"Recall: {recall:.2f}%")
+    print(f"Total Samples: {total_samples}")
+    print("=" * 30)
+    
+    return models, optimizers
 
-    for dataloader in dataloaders:
-        for i,(srt_string,comments,labels) in enumerate(dataloader):
-            srt_tensors=models[0](srt_string) # 20 x 1024
-            comments_tensor=models[1](comments) # B x 768
-            context_tensors=models[2](srt_tensors,comments_tensor) # B x 2 x 1024, where k=2
-            pred=models[3](comments_tensor,context_tensors) # B x 2
 
-            loss=loss_function(pred,torch.tensor(np.array(labels)))
-
-            loss.backward()
-
-            for optim in optimisers:
-                optim.zero_grad()
-            
-            for optim in optimisers:
-                optim.step()
-
-    return models, optimisers
-
-
-def eval_one_epoch(models,dataloaders,optimisers,loss_function):
-   
+def eval_one_epoch(models, dataloaders, optimizers, loss_function):
+    """
+    Evaluate models for one epoch with proper logging
+    """
+    # Set models to evaluation mode
     for model in models:
         model.eval()
-
-    for dataloader in dataloaders:
-        for i,(srt_string,comments,labels) in enumerate(dataloader):
-            srt_tensors=models[0](srt_string) # 20 x 1024
-            comments_tensor=models[1](comments) # B x 768
-            context_tensors=models[2](srt_tensors,comments_tensor) # B x 2 x 1024, where k=2
-            pred=models[3](comments_tensor,context_tensors) # B x 2
-
-            loss=loss_function(pred,torch.tensor(np.array(labels)))
-
-            loss.backward()
-
-            for optim in optimisers:
-                optim.zero_grad()
+    
+    total_loss = 0.0
+    total_samples = 0
+    all_predictions = []
+    all_labels = []
+    batch_count = 0
+    
+    # No gradient computation during evaluation
+    with torch.no_grad():
+        for dataloader_idx, dataloader in enumerate(dataloaders):
+            print(f"Evaluating on dataloader {dataloader_idx + 1}/{len(dataloaders)}")
             
-            for optim in optimisers:
-                optim.step()
-
-
-    return models, optimisers
+            for batch_idx, (srt_string, comments, labels) in enumerate(dataloader):
+                try:
+                    # Forward pass
+                    srt_tensors = models[0](srt_string)  # 20 x 1024
+                    comments_tensor = models[1](comments)  # B x 768
+                    context_tensors = models[2](srt_tensors, comments_tensor)  # B x 2 x 1024
+                    pred = models[3](comments_tensor, context_tensors)  # B x 2
+                    
+                    # Convert labels to tensor
+                    labels_tensor = torch.tensor(labels, dtype=torch.long)
+                    
+                    # Calculate loss
+                    loss = loss_function(pred, labels_tensor)
+                    
+                    # Collect statistics
+                    total_loss += loss.item()
+                    total_samples += len(labels)
+                    batch_count += 1
+                    
+                    # Get predictions
+                    predicted_classes = torch.argmax(pred, dim=1)
+                    all_predictions.extend(predicted_classes.cpu().numpy())
+                    all_labels.extend(labels)
+                    
+                    # Print batch progress
+                    if batch_idx % 10 == 0:
+                        current_accuracy = accuracy_score(all_labels, all_predictions) * 100
+                        print(f"  Batch {batch_idx}: Loss = {loss.item():.4f}, Accuracy = {current_accuracy:.2f}%")
+                        
+                except Exception as e:
+                    print(f"Error in batch {batch_idx} of dataloader {dataloader_idx}: {str(e)}")
+                    continue
+    
+    # Calculate final metrics
+    avg_loss = total_loss / batch_count if batch_count > 0 else 0
+    accuracy = accuracy_score(all_labels, all_predictions) * 100
+    f1 = f1_score(all_labels, all_predictions, average='weighted') * 100
+    precision = precision_score(all_labels, all_predictions, average='weighted') * 100
+    recall = recall_score(all_labels, all_predictions, average='weighted') * 100
+    
+    print(f"\n=== VALIDATION EPOCH SUMMARY ===")
+    print(f"Average Loss: {avg_loss:.4f}")
+    print(f"Accuracy: {accuracy:.2f}%")
+    print(f"F1 Score: {f1:.2f}%")
+    print(f"Precision: {precision:.2f}%")
+    print(f"Recall: {recall:.2f}%")
+    print(f"Total Samples: {total_samples}")
+    print("=" * 35)
+    
+    return models, optimizers
         
 
         
