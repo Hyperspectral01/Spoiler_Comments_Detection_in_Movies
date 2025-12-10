@@ -32,7 +32,7 @@ The core innovation is a **four-stage neural network pipeline** that simultaneou
 
 The solution is implemented as a pipeline of four distinct PyTorch models (`Model1` through `Model4`), leveraging a pre-trained feature extractor (specifically **allenai/scibert\_scivocab\_uncased**) to handle textual data effectively.
 
-[Image of Deep Learning Model Flowchart]
+![Architecture](flow.png)
 
 The data flow can be visualized as a structured pipeline:
 
