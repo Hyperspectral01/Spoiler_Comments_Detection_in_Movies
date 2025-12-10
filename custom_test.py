@@ -14,17 +14,17 @@ from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_sc
 import random
 
 
-
 ############################# INPUT #####################
-model1_weights_path="/home/bce22157/Shrey_Playground/Spoilers_in_movies/out/best_model1_weights.pth"
-model2_weights_path="/home/bce22157/Shrey_Playground/Spoilers_in_movies/out/best_model2_weights.pth"
-model3_weights_path="/home/bce22157/Shrey_Playground/Spoilers_in_movies/out/best_model3_weights.pth"
-model4_weights_path="/home/bce22157/Shrey_Playground/Spoilers_in_movies/out/best_model4_weights.pth"
+model1_weights_path="out/best_model1_weights.pth"
+model2_weights_path="out/best_model2_weights.pth"
+model3_weights_path="out/best_model3_weights.pth"
+model4_weights_path="out/best_model4_weights.pth"
 
 
-srt_file_path="/home/bce22157/Shrey_Playground/Spoilers_in_movies/subtitles_for_test/Avengers_.Endgame.2019.720p.BluRay.x264.[YTS.MX]-English-en.srt"
+srt_file_path="extra_subtitles_for_test/Deadpool.And.Wolverine.English-WWW.MY-SUBS.NET-en.srt"
 
-sample_comments=["Thanos dies","Thanos got all the infinity stones.","Damn, in the end, Tony sacrifices.","Salute to Tony Stark","Is that new hammer for Thor???","Is that new weapon for Thor???","Damn he got the big one.","Is that racoon or rocket??!!","So this was the one and only chance","Thanos knows about Doctor Strange."]
+sample_comments=["This movie is full of deadpools", "Henry Cavill","There is superman in this","Thor is coming in this movie","Good movie","Worth watching one time","Wolvrine dies in the end"]
+
 
 
 ###############################  CLASSES  #########################################
@@ -33,7 +33,7 @@ class Model1(nn.Module):
         super().__init__()
         self.number_of_chunks = number_of_hidden_states
         self.gru = nn.GRU(input_size_to_GRU, size_of_GRU, batch_first=True, dropout=0.3)
-        model_path = "./my_model_from_huggingface"
+        model_path = "./model_from_huggingface"
 
         # Load the tokenizer and model from the local dataset folder
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -76,7 +76,7 @@ class Model2(nn.Module):
         self.gru = nn.GRU(input_size_to_GRU, size_of_GRU, batch_first=True, dropout=0.3)
         self.max_seq_len = max_seq_len
         
-        model_path = "./my_model_from_huggingface"
+        model_path = "./model_from_huggingface"
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModel.from_pretrained(model_path)
         
@@ -257,7 +257,11 @@ pred = models[3](comments_tensor, context_tensors)  # B x 2
 print(pred)
 
 for i,comment in enumerate(sample_comments):
-  print(comment," : ",pred[i])
+  if (pred[i][0]>pred[i][1]):
+    final_pred="Non-spoiler"
+  elif (pred[i][0]<pred[i][1]):
+    final_pred="Spoiler"
+  print(comment," : ",final_pred)
 
 
 

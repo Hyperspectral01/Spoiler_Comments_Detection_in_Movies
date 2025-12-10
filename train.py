@@ -2,11 +2,20 @@
 """
 The input dir should be having all the subtitle files with the same name as the comments file, but only with a different extension,
  this time the extension should be with .csv instead of the .srt file extension
+ 
+ Also all the subtitle files should be downloaded from www.subtitlecat.com, since the regex used here to parse the subtitle file is suited to that format, however feel free to change the extract_dialogues_from_srt() function in case the format of the subtitle file changes.
+ 
+ Also since the validation accuracy was fluctuating due to a small number of validation movies, we broke the train loop and saved the models at the best validation accuracy of 94% from about 400 comments across three validation movies.
 """
 
 #####################################   INPUTS    ################################
 train_dir_path="./train"
 valid_dir_path="./valid"
+
+
+n_epochs = 20
+batch_size = 8  
+lr = 0.0005  
 
 #####################################   DEPENDENCIES    ################################
 
@@ -58,10 +67,7 @@ def my_collate_fn(batch):
     return to_return_srt,to_return_comments,to_return_labels
 
 def train_one_epoch(models, dataloaders, optimizers, loss_function):
-    """
-    Train models for one epoch with proper logging and regularization
-    """
-    # Set models to training mode
+    
     for model in models:
         model.train()
     
@@ -76,7 +82,7 @@ def train_one_epoch(models, dataloaders, optimizers, loss_function):
         
         for batch_idx, (srt_string, comments, labels) in enumerate(dataloader):
             try:
-                # Clear gradients
+                
                 for optim in optimizers:
                     optim.zero_grad()
                 
@@ -86,19 +92,16 @@ def train_one_epoch(models, dataloaders, optimizers, loss_function):
                 context_tensors = models[2](srt_tensors, comments_tensor)  # B x 2 x 1024
                 pred = models[3](comments_tensor, context_tensors)  # B x 2
                 
-                # Convert labels to tensor and move to device
                 labels_tensor = torch.tensor(labels, dtype=torch.long)
                 pred = pred
                 
-                # Calculate loss
                 loss = loss_function(pred, labels_tensor)
                 
-                # Add L2 regularization
                 l2_reg = torch.tensor(0.)
                 for model in models:
                     for param in model.parameters():
                         l2_reg += torch.norm(param, 2)
-                loss += 0.001 * l2_reg  # L2 regularization with weight 0.001
+                loss += 0.001 * l2_reg  
                 
                 # Backward pass
                 loss.backward()
@@ -107,21 +110,17 @@ def train_one_epoch(models, dataloaders, optimizers, loss_function):
                 for model in models:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 
-                # Update weights
                 for optim in optimizers:
                     optim.step()
                 
-                # Collect statistics
                 total_loss += loss.item()
                 total_samples += len(labels)
                 batch_count += 1
                 
-                # Get predictions
                 predicted_classes = torch.argmax(pred, dim=1)
                 all_predictions.extend(predicted_classes.detach().numpy())
                 all_labels.extend(labels)
                 
-                # Print batch progress
                 if batch_idx % 5 == 0:
                     current_accuracy = accuracy_score(all_labels, all_predictions) * 100 if all_labels else 0
                     print(f"  Batch {batch_idx}: Loss = {loss.item():.4f}, Accuracy = {current_accuracy:.2f}%")
@@ -130,7 +129,6 @@ def train_one_epoch(models, dataloaders, optimizers, loss_function):
                 print(f"Error in batch {batch_idx} of dataloader {dataloader_idx}: {str(e)}")
                 continue
     
-    # Calculate final metrics
     avg_loss = total_loss / batch_count if batch_count > 0 else 0
     accuracy = accuracy_score(all_labels, all_predictions) * 100 if all_labels else 0
     
@@ -143,10 +141,6 @@ def train_one_epoch(models, dataloaders, optimizers, loss_function):
     return models, optimizers, avg_loss, accuracy
 
 def eval_one_epoch(models, dataloaders, loss_function):
-    """
-    Evaluate models for one epoch with proper logging
-    """
-    # Set models to evaluation mode - THIS IS CRUCIAL
     for model in models:
         model.eval()
     
@@ -156,7 +150,6 @@ def eval_one_epoch(models, dataloaders, loss_function):
     all_labels = []
     batch_count = 0
     
-    # No gradient computation during evaluation
     with torch.no_grad():
         for dataloader_idx, dataloader in enumerate(dataloaders):
             print(f"Evaluating on dataloader {dataloader_idx + 1}/{len(dataloaders)}")
@@ -168,25 +161,20 @@ def eval_one_epoch(models, dataloaders, loss_function):
                     comments_tensor = models[1](comments)  # B x 768
                     context_tensors = models[2](srt_tensors, comments_tensor)  # B x 2 x 1024
                     pred = models[3](comments_tensor, context_tensors)  # B x 2
-                    
-                    # Convert labels to tensor and move to device
+                                    
                     labels_tensor = torch.tensor(labels, dtype=torch.long)
-                    pred = pred
+                    pred = pred                  
                     
-                    # Calculate loss (without regularization for validation)
-                    loss = loss_function(pred, labels_tensor)
+                    loss = loss_function(pred, labels_tensor)                   
                     
-                    # Collect statistics
                     total_loss += loss.item()
                     total_samples += len(labels)
                     batch_count += 1
                     
-                    # Get predictions
                     predicted_classes = torch.argmax(pred, dim=1)
                     all_predictions.extend(predicted_classes.numpy())
                     all_labels.extend(labels)
-                    
-                    # Print batch progress
+                  
                     if batch_idx % 5 == 0:
                         current_accuracy = accuracy_score(all_labels, all_predictions) * 100 if all_labels else 0
                         print(f"  Batch {batch_idx}: Loss = {loss.item():.4f}, Accuracy = {current_accuracy:.2f}%")
@@ -195,7 +183,6 @@ def eval_one_epoch(models, dataloaders, loss_function):
                     print(f"Error in batch {batch_idx} of dataloader {dataloader_idx}: {str(e)}")
                     continue
     
-    # Calculate final metrics
     avg_loss = total_loss / batch_count if batch_count > 0 else 0
     accuracy = accuracy_score(all_labels, all_predictions) * 100 if all_labels else 0
     
@@ -213,7 +200,7 @@ class Model1(nn.Module):
         super().__init__()
         self.number_of_chunks = number_of_hidden_states
         self.gru = nn.GRU(input_size_to_GRU, size_of_GRU, batch_first=True, dropout=0.3)
-        model_path = "./my_model_from_huggingface"
+        model_path = "./model_from_huggingface"
 
         # Load the tokenizer and model from the local dataset folder
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -256,7 +243,7 @@ class Model2(nn.Module):
         self.gru = nn.GRU(input_size_to_GRU, size_of_GRU, batch_first=True, dropout=0.3)
         self.max_seq_len = max_seq_len
         
-        model_path = "./my_model_from_huggingface"
+        model_path = "./model_from_huggingface"
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModel.from_pretrained(model_path)
         
@@ -353,7 +340,6 @@ class Model4(nn.Module):
         srt_flattened_dim = srt_dim * k_hidden_states
         input_dim = srt_flattened_dim + comment_dim
         
-        # Simplified network to prevent overfitting
         self.network = nn.Sequential(
             nn.Linear(input_dim, 1024),
             nn.BatchNorm1d(1024),
@@ -425,15 +411,8 @@ class my_dataset(Dataset):
 
 ###############################  MAIN ###################################
 
-
-
-# Reduced hyperparameters to prevent overfitting
-n_epochs = 20
-batch_size = 8  # Reduced batch size
-lr = 0.0005  # Reduced learning rate
 loss_function = nn.CrossEntropyLoss()
 
-# Initialize models and move to device
 models = [Model1(768, 1024, 20), Model2(), Model3(), Model4()]
 
 train_datasets = []
@@ -450,17 +429,13 @@ for file_name in os.listdir(valid_dir_path):
         srt_file_path = os.path.join(valid_dir_path, file_name)
         valid_datasets.append(my_dataset(srt_file_path))
 
-# Create dataloaders
 train_dataloaders = [DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=my_collate_fn) for dataset in train_datasets]
 test_dataloaders = [DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=my_collate_fn) for dataset in valid_datasets]  # No shuffle for validation
 
-# Initialize optimizers with weight decay for regularization
 optimizers = [optim.Adam(model.parameters(), lr=lr, weight_decay=0.01) for model in models]
 
-# Learning rate scheduler
 schedulers = [optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True) for optimizer in optimizers]
 
-# Create output directory
 os.makedirs("./out", exist_ok=True)
 
 # Training loop with early stopping
@@ -477,17 +452,13 @@ for epoch in range(n_epochs):
     print(f"EPOCH {epoch + 1}/{n_epochs}")
     print(f"{'='*50}")
     
-    # Training
     models, optimizers, train_loss, train_acc = train_one_epoch(models, train_dataloaders, optimizers, loss_function)
     
-    # Validation
     val_loss, val_acc = eval_one_epoch(models, test_dataloaders, loss_function)
     
-    # Update learning rate schedulers
     for scheduler in schedulers:
         scheduler.step(val_loss)
     
-    # Store metrics
     train_losses.append(train_loss)
     val_losses.append(val_loss)
     train_accuracies.append(train_acc)
@@ -519,7 +490,6 @@ for epoch in range(n_epochs):
 print(f"\nTraining completed!")
 print(f"Best validation accuracy: {best_val_accuracy:.2f}%")
 
-# Plot training curves
 plt.figure(figsize=(12, 4))
 
 plt.subplot(1, 2, 1)
