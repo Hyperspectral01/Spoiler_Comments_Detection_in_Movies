@@ -1,5 +1,5 @@
 
-# 🎬 Context-Aware Movie Spoiler Classification 🤖
+# 🎬 Context-Aware Movie Spoiler Classification
 
 ## Table of Contents
 
