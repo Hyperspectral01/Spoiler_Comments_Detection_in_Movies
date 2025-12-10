@@ -3,15 +3,14 @@
 
 ## Table of Contents
 
-1.  [🌟 Project Overview](https://www.google.com/search?q=%23-project-overview)
-2.  [✨ Model Architecture: The Four-Stage Pipeline](https://www.google.com/search?q=%23-model-architecture-the-four-stage-pipeline)
-3.  [💻 Setup and Installation](https://www.google.com/search?q=%23-setup-and-installation)
-4.  [🚀 How to Run the Project](https://www.google.com/search?q=%23-how-to-run-the-project)
-      * [Training the Model (`train.py`)](https://www.google.com/search?q=%23training-the-model-trainpy)
-      * [Custom Inference (`custom_test.py`)](https://www.google.com/search?q=%23custom-inference-custom_testpy)
-5.  [📈 Training Performance and Optimization](https://www.google.com/search?q=%23-training-performance-and-optimization)
-6.  [📂 Dataset Structure](https://www.google.com/search?q=%23-dataset-structure)
-7.  [🛠️ Dependencies and Requirements](https://www.google.com/search?q=%23-dependencies-and-requirements)
+1.  [🌟 Project Overview](#-project-overview)
+2.  [✨ Model Architecture: The Four-Stage Pipeline](#-model-architecture-the-four-stage-pipeline)
+3.  [💻 Setup and Installation](#-setup-and-installation)
+4.  [🚀 How to Run the Project](#-how-to-run-the-project)
+      * [Training the Model (`train.py`)](#training-the-model-trainpy)
+      * [Custom Inference (`custom_test.py`)](#custom-inference-custom_testpy)
+5.  [📈 Training Performance and Optimization](#-training-performance-and-optimization)
+6.  [📂 Dataset Structure](#-dataset-structure)
 
 -----
 
